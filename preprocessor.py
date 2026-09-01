@@ -111,7 +111,7 @@ def get_result(winner, fighter_name):
         return np.nan
 
     w = str(winner).strip().upper()
-    if w in ["DRAW", "NO CONTEST", "NC"]:
+    if w == "" or w in ["DRAW", "NO CONTEST", "NC"]:
         return np.nan
 
     return 1 if str(winner).strip() == str(fighter_name).strip() else 0
@@ -392,6 +392,153 @@ def build_fighter_history(df):
 
     return fighter_hist
 
+# Rolling pre-fight features
+
+def add_rolling_features(fighter_hist, window=5):
+    """
+    Add rolling pre-fight features using only prior fights.
+
+    shift(1) is critical because it prevents the current
+    fight from leaking into its own features
+    """
+    d = fighter_hist.copy()
+    d = d.sort_values(["fighter", "fight_index"]).reset_index(drop=True)
+
+    rolling_cols = ["sig_per_sec", "sig_rate", "ctrl_pct", "td_rate"]
+
+    for col in rolling_cols:
+        d[f"{col}_avg"] = (
+            d.groupby("fighter")[col]
+            .transform(lambda s: s.shift(1).rolling(window=window, min_periods=window).mean())
+        )
+    d["win_rate_avg"] = (
+        d.groupby("fighter")["result"]
+        .transform(lambda s: s.shift(1).rolling(window=window, min_periods=3).mean())
+    )
+    # how many prior fights does this fighter have, at this row, period (regardless of NaN)?
+    # d["prior_fight_count"] = d.groupby("fighter").cumcount()
+
+    # insufficient_history = d["prior_fight_count"] < 5
+    # still_missing_with_history = d["win_rate_avg"].isna() & (~insufficient_history)
+
+    # print("Missing due to <5 career fights so far:", insufficient_history.mean())
+    # print("Missing despite having 5+ fights (draw/NC contamination):", still_missing_with_history.mean())
+
+    d["kd_per_sec_avg"] = (
+        d.groupby("fighter")["kd_per_sec"]
+        .transform(lambda s: s.shift(1).rolling(window=window, min_periods=window).mean())
+    )
+
+    d["opp_elo_avg_5"] = (
+        d.groupby("fighter")["opp_elo_pre"]
+        .transform(lambda s: s.shift(1).rolling(window=5, min_periods=5).mean())
+    )
+
+    d["opp_elo_avg_3"] = (
+        d.groupby("fighter")["opp_elo_pre"]
+        .transform(lambda s: s.shift(1).rolling(window=3, min_periods=3).mean())
+    )
+
+    d["ko_win_rate_avg"] = (
+        d.groupby("fighter")["win_ko"]
+        .transform(lambda s: s.shift(1).rolling(window=window, min_periods=window).mean())
+    )
+
+    d["sub_win_rate_avg"] = (
+        d.groupby("fighter")["win_sub"]
+        .transform(lambda s: s.shift(1).rolling(window=window, min_periods=window).mean())
+    )
+
+
+    return d
+
+# Match-up dataset creation
+BASE_FEATURE_COLS = [
+    "sig_per_sec_avg",
+    "sig_rate_avg",
+    "ctrl_pct_avg",
+    "td_rate_avg",
+    "win_rate_avg",
+    "kd_per_sec_avg",
+    # "exp_prior",
+    # "exp_div_prior",
+    "ko_win_rate_avg",
+    "sub_win_rate_avg",
+    # "win_streak_prior",
+    # "loss_streak_prior",
+]
+
+FINAL_FEATURE_COLS = [f"{c}_diff" for c in BASE_FEATURE_COLS] + [
+    "elo_diff_pre",
+    "age_diff",
+    "height_diff",
+    "reach_diff",
+]
+
+def build_matchup_dataset(df_fight_level, fighter_hist_rolled):
+    """
+    Build the final matchup-level dataset for modeling.
+
+    Returns:
+        paired, X, y, feature_cols
+    """
+    # print(fighter_hist_rolled.shape)
+    model_df = fighter_hist_rolled.dropna(subset=BASE_FEATURE_COLS + ["result"]).copy()
+    model_df["fight_id"] = model_df["fight_index"]
+    # print(model_df.shape)
+
+    # keep only fights where both fighters have valid rows
+    counts = model_df.groupby("fight_id").size()
+    valid_fights = counts[counts == 2].index
+    model_df = model_df[model_df["fight_id"].isin(valid_fights)].copy()
+    # print(model_df.shape)
+
+    # self-merge to pair each fighter with the other side of the same fight
+    paired = model_df.merge(model_df, on="fight_id", suffixes=("_f", "_o"))
+    paired = paired[paired["fighter_f"] != paired["fighter_o"]].reset_index(drop=True)
+    # print("paired shape:", paired.shape)
+
+
+
+    # Directional fight-level differences
+    fight_level_long = pd.concat([
+        df_fight_level[
+            ["fight_index", "Fighter1", "Fighter2", "age_diff", "height_diff", "reach_diff", "elo_diff_pre"]
+        ].rename(columns={
+            "fight_index": "fight_id",
+            "Fighter1": "fighter_f",
+            "Fighter2": "fighter_o"
+        }),
+
+        df_fight_level[
+            ["fight_index", "Fighter2", "Fighter1", "age_diff", "height_diff", "reach_diff", "elo_diff_pre"]
+        ].rename(columns={
+            "fight_index": "fight_id",
+            "Fighter2": "fighter_f",
+            "Fighter1": "fighter_o"
+        }).assign(
+            age_diff=lambda x: -x["age_diff"],
+            height_diff=lambda x: -x["height_diff"],
+            reach_diff=lambda x: -x["reach_diff"],
+            elo_diff_pre=lambda x: -x["elo_diff_pre"]
+        )
+    ], ignore_index=True)
+
+    paired = paired.merge(
+        fight_level_long,
+        on=["fight_id", "fighter_f", "fighter_o"],
+        how="left"
+    )
+
+    #fighter minus opponent feature difference
+    for col in BASE_FEATURE_COLS:
+        paired[f"{col}_diff"] = paired[f"{col}_f"] - paired[f"{col}_o"]
+
+    X = paired[FINAL_FEATURE_COLS].copy()
+    y = paired["result_f"].copy()
+
+    return paired, X, y, FINAL_FEATURE_COLS
+
 
 def run_preprocessor(df_raw, base_elo=1500, elo_k=16, rolling_window=5):
     """
@@ -407,13 +554,24 @@ def run_preprocessor(df_raw, base_elo=1500, elo_k=16, rolling_window=5):
     Returns a dictionary of all useful intermediate outputs.
     """
     df_raw = derandomise_fighter_order(df_raw)
-    print(df_raw["Winner"].eq(df_raw["Fighter1"]).mean())
+    # print(df_raw["Winner"].eq(df_raw["Fighter1"]).mean())
     df_fight = clean_fight_level(df_raw);
     df_fight = build_elo_features(df_fight, base_elo=base_elo, k=elo_k)
     fighter_hist = build_fighter_history(df_fight)
+    fighter_hist_rolled = add_rolling_features(fighter_hist, window=rolling_window)
+    paired, X, y, feature_cols = build_matchup_dataset(df_fight, fighter_hist_rolled)
+    # print("paired shape",paired.shape)
 
-
-    return {"df_fight": df_fight}
+    assert (paired["opponent_f"] == paired["fighter_o"]).all()
+    return {
+            "df_fight": df_fight,
+            "fighter_hist": fighter_hist,
+            "fighter_hist_rolled": fighter_hist_rolled,
+            "paired": paired,
+            "X": X,
+            "y": y,
+            "feature_cols": feature_cols,
+        }
 
 BASE_ELO = 1500
 ELO_K = 16
@@ -424,7 +582,7 @@ def main():
     print("Loaded rows:", len(df))
     print("loaded columns:", len(df.columns))
 
-    print(df["Winner"].eq(df["Fighter1"]).mean())
+    # print(df["Winner"].eq(df["Fighter1"]).mean())
 
     # run preprocessing
     bundle = run_preprocessor(
@@ -433,6 +591,7 @@ def main():
             elo_k=ELO_K,
             rolling_window=ROLLING_WINDOW,
         )
+
 
 if __name__ == "__main__":
     main()
