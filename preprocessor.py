@@ -6,7 +6,7 @@ import re
 
 
 
-def mmss_to_seconds2(value):
+def mmss_to_seconds(value):
     """
     Convert a time string like '4:32' into total seconds.
     Returns np.nan if the value is missing or invalid.
@@ -73,6 +73,63 @@ def clean_stance(value):
 
     return "Unknown"
 
+def parse_of(value):
+    """
+    Convert a stat string like '45 of 102' into:
+    landed, attempted, rate
+
+    Returns:
+        (landed, attempted, rate)
+    or:
+        (np.nan, np.nan, np.nan)
+    """
+    if pd.isna(value):
+        return np.nan, np.nan, np.nan
+
+    value = str(value).strip()
+    if "of" not in value:
+        return np.nan, np.nan, np.nan
+
+    try:
+        landed, attempted = value.split("of")
+        landed = int(landed.strip())
+        attempted = int(attempted.strip())
+        rate = landed / attempted if attempted > 0 else 0.0
+        return landed, attempted, rate
+    except Exception:
+        return np.nan, np.nan, np.nan
+
+def get_result(winner, fighter_name):
+    """
+    Return result from one fighter's perspective.
+
+    1   -> fighter won
+    0   -> fighter lost
+    NaN -> draw / no contest / unknown
+    """
+    if pd.isna(winner):
+        return np.nan
+
+    w = str(winner).strip().upper()
+    if w in ["DRAW", "NO CONTEST", "NC"]:
+        return np.nan
+
+    return 1 if str(winner).strip() == str(fighter_name).strip() else 0
+
+def method_group(m):
+    """
+    Collapse detailed method labels into broad groups.
+    """
+    m = "" if pd.isna(m) else str(m).strip().lower()
+
+    if "ko/tko" in m:
+        return "ko"
+    if "submission" in m:
+        return "sub"
+    if "decision" in m:
+        return "dec"
+
+    return "other"
 
 def derandomise_fighter_order(df_raw, seed=42):
     """
@@ -111,7 +168,7 @@ def elo_expected(r_a, r_b, scale=400):
     """
     return 1.0 / (1.0 + 10 ** (-(r_a - r_b)/ scale))
 
-def built_elo_features(df, base_elo=1500, k=16, scale=400):
+def build_elo_features(df, base_elo=1500, k=16, scale=400):
     """
         Compute Elo ratings over time and add them to the fight-level dataframe.
 
@@ -184,8 +241,6 @@ def built_elo_features(df, base_elo=1500, k=16, scale=400):
 
     return d
 
-
-
 # Fight level cleaning
 def clean_fight_level(df_raw):
     """
@@ -205,7 +260,7 @@ def clean_fight_level(df_raw):
     df = df_raw.copy()
 
     #convert time and round into fight duration
-    df["round_time_seconds"] = df["Time"].apply(mmss_to_seconds2)
+    df["round_time_seconds"] = df["Time"].apply(mmss_to_seconds)
     df["Round"] = pd.to_numeric(df["Round"], errors="coerce");
     df["total_fight_seconds"] = (df["Round"] - 1) * 5 * 60 + df["round_time_seconds"]
 
@@ -241,6 +296,103 @@ def clean_fight_level(df_raw):
 
     return df
 
+# =================
+# Fight level --> fighter history
+# =================
+
+def build_fighter_history(df):
+    """
+    Convert each fight into two fighter-perspective rows.
+
+    Returns a dataframe where each row represents:
+        one fighter, one fight, one opponent
+        Done so that model can learn fighter level patterns
+    """
+    rows = []
+
+    for _, r in df.iterrows():
+        f1 = r["Fighter1"]
+        f2 = r["Fighter2"]
+        m = r["Method"]
+
+        rows.append({
+            "fight_index": r["fight_index"],
+            "event_date": r["event_date"],
+            "event": r["Event"],
+            "weightclass": r["Weightclass"],
+            "method": m,
+            "fighter": f1,
+            "opponent": f2,
+            "result": get_result(r["Winner"], f1),
+            "total_fight_seconds": r["total_fight_seconds"],
+            "kd": r["KD1"],
+            "sig_str": r["SIG_STR1"],
+            "td": r["TD1"],
+            "sub_att": r["SUB_ATT1"],
+            "rev": r["REV1"],
+            "ctrl": r["CTRL1"],
+            "stance": r["f1_stance_clean"],
+            "opp_stance": r["f2_stance_clean"],
+            "own_elo_pre": r["elo_pre_f1"],
+            "opp_elo_pre": r["elo_pre_f2"],
+        })
+
+        rows.append({
+            "fight_index": r["fight_index"],
+            "event_date": r["event_date"],
+            "event": r["Event"],
+            "weightclass": r["Weightclass"],
+            "method": m,
+            "fighter": f2,
+            "opponent": f1,
+            "result": get_result(r["Winner"], f2),
+            "total_fight_seconds": r["total_fight_seconds"],
+            "kd": r["KD2"],
+            "sig_str": r["SIG_STR2"],
+            "td": r["TD2"],
+            "sub_att": r["SUB_ATT2"],
+            "rev": r["REV2"],
+            "ctrl": r["CTRL2"],
+            "stance": r["f2_stance_clean"],
+            "opp_stance": r["f1_stance_clean"],
+            "own_elo_pre": r["elo_pre_f2"],
+            "opp_elo_pre": r["elo_pre_f1"],
+        })
+
+    fighter_hist = pd.DataFrame(rows)
+    fighter_hist = fighter_hist.sort_values(["fighter", "fight_index"]).reset_index(drop=True)
+
+    # parse significant strikes
+    fighter_hist[["sig_landed", "sig_attempted", "sig_rate"]] = (
+        fighter_hist["sig_str"].apply(parse_of).apply(pd.Series)
+    )
+
+    # Parse takedowns
+    fighter_hist[["td_landed", "td_attempted", "td_rate"]] = (
+        fighter_hist["td"].apply(parse_of).apply(pd.Series)
+    )
+
+    # Other derived numeric features
+    fighter_hist["ctrl_seconds"] = fighter_hist["ctrl"].apply(mmss_to_seconds)
+    fighter_hist["kd"] = pd.to_numeric(fighter_hist["kd"], errors="coerce")
+
+    # Per-second / proportion stats
+    fighter_hist["sig_per_sec"] = fighter_hist["sig_landed"] / fighter_hist["total_fight_seconds"]
+    fighter_hist["ctrl_pct"] = fighter_hist["ctrl_seconds"] / fighter_hist["total_fight_seconds"]
+    fighter_hist["kd_per_sec"] = fighter_hist["kd"] / fighter_hist["total_fight_seconds"]
+
+    # Method group features
+    fighter_hist["method_group"] = fighter_hist["method"].apply(method_group)
+    fighter_hist["win_ko"] = (
+        (fighter_hist["result"] == 1) & (fighter_hist["method_group"] == "ko")
+    ).astype(int)
+    fighter_hist["win_sub"] = (
+        (fighter_hist["result"] == 1) & (fighter_hist["method_group"] == "sub")
+    ).astype(int)
+
+    return fighter_hist
+
+
 def run_preprocessor(df_raw, base_elo=1500, elo_k=16, rolling_window=5):
     """
     Full preprocessing pipeline.
@@ -256,10 +408,10 @@ def run_preprocessor(df_raw, base_elo=1500, elo_k=16, rolling_window=5):
     """
     df_raw = derandomise_fighter_order(df_raw)
     print(df_raw["Winner"].eq(df_raw["Fighter1"]).mean())
-
     df_fight = clean_fight_level(df_raw);
-
     df_fight = build_elo_features(df_fight, base_elo=base_elo, k=elo_k)
+    fighter_hist = build_fighter_history(df_fight)
+
 
     return {"df_fight": df_fight}
 
