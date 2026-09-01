@@ -103,6 +103,89 @@ def derandomise_fighter_order(df_raw, seed=42):
     return df
 
 
+# ELo helpers
+
+def elo_expected(r_a, r_b, scale=400):
+    """
+    standard elo expected score formula
+    """
+    return 1.0 / (1.0 + 10 ** (-(r_a - r_b)/ scale))
+
+def built_elo_features(df, base_elo=1500, k=16, scale=400):
+    """
+        Compute Elo ratings over time and add them to the fight-level dataframe.
+
+        Adds:
+            elo_pre_f1
+            elo_pre_f2
+            elo_post_f1
+            elo_post_f2
+            elo_diff_pre
+            s1
+        """
+    d = df.sort_values("fight_index").reset_index(drop=True).copy()
+
+    elo = {}
+    pre1, pre2, post1, post2, s1_list = [], [], [], [], []
+
+    for _,row in d.iterrows():
+        f1 = str(row["Fighter1"]).strip()
+        f2 = str(row["Fighter2"]).strip()
+        winner = "" if pd.isna(row["Winner"]) else str(row["Winner"]).strip()
+
+        r1 = elo.get(f1, base_elo);
+        r2 = elo.get(f2, base_elo);
+
+        pre1.append(r1)
+        pre2.append(r2)
+
+        w_up = winner.upper()
+
+        if w_up in ["NO CONTEST", "NC", ""]:
+            s1 = np.nan
+            s1_list.append(s1)
+            post1.append(r1)
+            post2.append(r2)
+            continue
+
+        if w_up == "DRAW":
+            s1 = 0.5
+        elif winner == f1:
+            s1 = 1.0
+        elif winner == f2:
+            s1 = 0.0
+        else:
+            s1 = np.nan
+
+        s1_list.append(s1)
+
+        if np.isnan(s1):
+            post1.append(r1)
+            post2.append(r2)
+            continue
+
+        e1 = elo_expected(r1, r2, scale=scale)
+
+        r1_new = r1 + k * (s1 - e1)
+        r2_new = r2 + k * ((1.0 - s1) - (1.0 - e1))
+
+        elo[f1] = r1_new
+        elo[f2] = r2_new
+
+        post1.append(r1_new)
+        post2.append(r2_new)
+
+    d["elo_pre_f1"] = pre1
+    d["elo_pre_f2"] = pre2
+    d["elo_post_f1"] = post1
+    d["elo_post_f2"] = post2
+    d["elo_diff_pre"] = d["elo_pre_f1"] - d["elo_pre_f2"]
+    d["s1"] = s1_list
+
+    return d
+
+
+
 # Fight level cleaning
 def clean_fight_level(df_raw):
     """
@@ -175,6 +258,8 @@ def run_preprocessor(df_raw, base_elo=1500, elo_k=16, rolling_window=5):
     print(df_raw["Winner"].eq(df_raw["Fighter1"]).mean())
 
     df_fight = clean_fight_level(df_raw);
+
+    df_fight = build_elo_features(df_fight, base_elo=base_elo, k=elo_k)
 
     return {"df_fight": df_fight}
 
