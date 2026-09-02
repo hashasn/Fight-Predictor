@@ -577,21 +577,21 @@ BASE_ELO = 1500
 ELO_K = 16
 ROLLING_WINDOW = 5
 
-def main():
-    df = pd.read_csv("ufc-dataset.csv")
-    print("Loaded rows:", len(df))
-    print("loaded columns:", len(df.columns))
+# def main():
+#     df = pd.read_csv("ufc-dataset.csv")
+#     print("Loaded rows:", len(df))
+#     print("loaded columns:", len(df.columns))
 
-    # print(df["Winner"].eq(df["Fighter1"]).mean())
+#     # print(df["Winner"].eq(df["Fighter1"]).mean())
 
-    # run preprocessing
-    bundle = run_preprocessor(
-            df_raw=df,
-            base_elo=BASE_ELO,
-            elo_k=ELO_K,
-            rolling_window=ROLLING_WINDOW,
-        )
+#     # run preprocessing
+#     bundle = run_preprocessor(
+#             df_raw=df,
+#             base_elo=BASE_ELO,
+#             elo_k=ELO_K,
+#             rolling_window=ROLLING_WINDOW,
+#         )
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

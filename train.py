@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
-from torch.utils.data import TensorDataset, DataLoader
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
+
 from sklearn.metrics import accuracy_score, roc_auc_score, log_loss
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.preprocessing import StandardScaler
 from preprocessor import run_preprocessor
 
 BASE_ELO = 1500
@@ -65,6 +65,30 @@ def chronological_split_3way(paired, feature_cols, test_size=0.2, val_size=0.2, 
     )
 
 
+# baseline model
+
+def train_logistic(X_train, y_train, X_val, y_val):
+
+
+    model = LogisticRegression(max_iter=1000)
+    model.fit(X_train, y_train)
+
+    val_pred = model.predict(X_val)
+    val_prob = model.predict_proba(X_val)[:, 1]
+
+    print("accuracy: ", accuracy_score(y_val, val_pred))
+    print("Val AUC: ", roc_auc_score(y_val, val_prob))
+    # sanity check: naive baselines
+    elo_auc = roc_auc_score(y_val, X_val["elo_diff_pre"])
+    print("Elo-only AUC:", elo_auc)
+
+    print(confusion_matrix(y_val, val_pred))
+    print(classification_report(y_val, val_pred))
+
+    return model
+
+
+
 
 def main():
     #load dataset
@@ -99,21 +123,53 @@ def main():
     )
 
 
-    print("Train rows:", X_train.shape)
-    print("Val rows:", X_val.shape)
-    print("Test rows:", X_test.shape)
+    # print("Train rows:", X_train.shape)
+    # print("Val rows:", X_val.shape)
+    # print("Test rows:", X_test.shape)
 
-    print("Unique train fights:", train_df["fight_id"].nunique())
-    print("Unique val fights:", val_df["fight_id"].nunique())
-    print("Unique test fights:", test_df["fight_id"].nunique())
+    # print("Unique train fights:", train_df["fight_id"].nunique())
+    # print("Unique val fights:", val_df["fight_id"].nunique())
+    # print("Unique test fights:", test_df["fight_id"].nunique())
 
-    train_val_overlap = set(train_df["fight_id"]) & set(val_df["fight_id"])
-    train_test_overlap = set(train_df["fight_id"]) & set(test_df["fight_id"])
-    val_test_overlap = set(val_df["fight_id"]) & set(test_df["fight_id"])
+    # train_val_overlap = set(train_df["fight_id"]) & set(val_df["fight_id"])
+    # train_test_overlap = set(train_df["fight_id"]) & set(test_df["fight_id"])
+    # val_test_overlap = set(val_df["fight_id"]) & set(test_df["fight_id"])
 
-    print("Train/Val overlap:", len(train_val_overlap))
-    print("Train/Test overlap:", len(train_test_overlap))
-    print("Val/Test overlap:", len(val_test_overlap))
+    # print("Train/Val overlap:", len(train_val_overlap))
+    # print("Train/Test overlap:", len(train_test_overlap))
+    # print("Val/Test overlap:", len(val_test_overlap))
+
+    # print(X_train.isna().sum())
+
+    train_df = train_df.dropna(subset=feature_cols)
+    val_df = val_df.dropna(subset=feature_cols)
+    test_df = test_df.dropna(subset=feature_cols)
+
+    X_train = train_df[feature_cols].copy()
+    y_train = train_df["result_f"].copy()
+    X_val = val_df[feature_cols].copy()
+    y_val = val_df["result_f"].copy()
+    X_test = test_df[feature_cols].copy()
+    y_test = test_df["result_f"].copy()
+
+    # print(paired[paired["reach_diff"].isna()][["fighter_f","fighter_o" ]])
+    scaler = StandardScaler()
+    X_train_scaled = pd.DataFrame(
+        scaler.fit_transform(X_train),
+        columns=feature_cols,
+        index=X_train.index
+    )
+    X_val_scaled = pd.DataFrame(
+        scaler.transform(X_val),
+        columns=feature_cols,
+        index=X_val.index
+    )
+
+    model = train_logistic(X_train_scaled, y_train, X_val_scaled, y_val)
+
+    # feature importance
+    coefs = pd.Series(model.coef_[0], index=feature_cols).sort_values()
+    print(coefs)
 
 
 
