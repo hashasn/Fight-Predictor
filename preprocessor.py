@@ -413,7 +413,7 @@ def add_rolling_features(fighter_hist, window=5):
         )
     d["win_rate_avg"] = (
         d.groupby("fighter")["result"]
-        .transform(lambda s: s.shift(1).rolling(window=window, min_periods=3).mean())
+        .transform(lambda s: s.shift(1).rolling(window=window, min_periods=window).mean())
     )
     # how many prior fights does this fighter have, at this row, period (regardless of NaN)?
     d["prior_fight_count"] = d.groupby("fighter").cumcount()
@@ -431,12 +431,12 @@ def add_rolling_features(fighter_hist, window=5):
 
     d["opp_elo_avg_5"] = (
         d.groupby("fighter")["opp_elo_pre"]
-        .transform(lambda s: s.shift(1).rolling(window=5, min_periods=3).mean())
+        .transform(lambda s: s.shift(1).rolling(window=window, min_periods=window).mean())
     )
 
     d["opp_elo_avg_3"] = (
         d.groupby("fighter")["opp_elo_pre"]
-        .transform(lambda s: s.shift(1).rolling(window=5, min_periods=3).mean())
+        .transform(lambda s: s.shift(1).rolling(window=3, min_periods=3).mean())
     )
 
     d["ko_win_rate_avg"] = (
@@ -449,6 +449,35 @@ def add_rolling_features(fighter_hist, window=5):
         .transform(lambda s: s.shift(1).rolling(window=window, min_periods=window).mean())
     )
 
+    # experience features
+    # Total career fights coming into this one (0 for a debut)
+    d["exp_prior"] = d.groupby("fighter").cumcount()
+
+    # Fights coming into this one *within the same weightclass*
+    d["exp_div_prior"] = d.groupby(["fighter", "weightclass"]).cumcount()
+
+    # win loss streak feature
+    d["result_clean"] = d["result"].fillna(0)
+
+    d["win_streak"] = (
+        d.groupby("fighter")["result_clean"]
+        .transform(lambda s: s.groupby((s != s.shift()).cumsum()).cumcount() + 1)
+    )
+    d.loc[d["result_clean"] != 1, "win_streak"] = 0
+
+    d["loss_flag"] = (d["result_clean"] == 0).astype(int)
+    d["loss_streak"] = (
+        d.groupby("fighter")["loss_flag"]
+        .transform(lambda s: s.groupby((s != s.shift()).cumsum()).cumcount() + 1)
+    )
+    d.loc[d["loss_flag"] != 1, "loss_streak"] = 0
+
+    # shift(1) so the streak reflects the state entering this fight,
+    # not including this fight's own result
+    d["win_streak_prior"] = d.groupby("fighter")["win_streak"].shift(1)
+    d["loss_streak_prior"] = d.groupby("fighter")["loss_streak"].shift(1)
+
+
 
     return d
 
@@ -460,12 +489,12 @@ BASE_FEATURE_COLS = [
     "td_rate_avg",
     "win_rate_avg",
     "kd_per_sec_avg",
-    # "exp_prior",
-    # "exp_div_prior",
+    "exp_prior",
+    "exp_div_prior",
     "ko_win_rate_avg",
     "sub_win_rate_avg",
-    # "win_streak_prior",
-    # "loss_streak_prior",
+    "win_streak_prior",
+    "loss_streak_prior",
 ]
 
 FINAL_FEATURE_COLS = [f"{c}_diff" for c in BASE_FEATURE_COLS] + [

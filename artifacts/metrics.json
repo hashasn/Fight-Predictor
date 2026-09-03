@@ -1,15 +1,17 @@
 {
-  "trained_at": "2026-09-03T04:15:00.507996+00:00",
+  "trained_at": "2026-09-03T07:29:55.800136+00:00",
   "model": "FightNet (NN)",
   "base_elo": 1500,
   "elo_k": 16,
   "rolling_window": 5,
-  "n_features": 12,
+  "n_features": 16,
   "train_rows": 3050,
-  "val_rows": 766,
-  "test_rows": 956,
-  "val_accuracy": 0.6409921671018277,
-  "val_auc": 0.6672074934044133,
-  "test_accuracy": 0.6150627615062761,
-  "test_auc": 0.6805815724514628
+  "val_rows": 764,
+  "test_rows": 954,
+  "val_accuracy": 0.6361256544502618,
+  "val_auc": 0.6657849291411968,
+  "val_logloss": 0.650524715949067,
+  "test_accuracy": 0.6488469601677149,
+  "test_auc": 0.6860619964927548,
+  "test_logloss": 0.6430566246985868
 }
