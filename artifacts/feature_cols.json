@@ -1,0 +1,14 @@
+[
+  "sig_per_sec_avg_diff",
+  "sig_rate_avg_diff",
+  "ctrl_pct_avg_diff",
+  "td_rate_avg_diff",
+  "win_rate_avg_diff",
+  "kd_per_sec_avg_diff",
+  "ko_win_rate_avg_diff",
+  "sub_win_rate_avg_diff",
+  "elo_diff_pre",
+  "age_diff",
+  "height_diff",
+  "reach_diff"
+]

@@ -416,10 +416,10 @@ def add_rolling_features(fighter_hist, window=5):
         .transform(lambda s: s.shift(1).rolling(window=window, min_periods=3).mean())
     )
     # how many prior fights does this fighter have, at this row, period (regardless of NaN)?
-    # d["prior_fight_count"] = d.groupby("fighter").cumcount()
+    d["prior_fight_count"] = d.groupby("fighter").cumcount()
 
-    # insufficient_history = d["prior_fight_count"] < 5
-    # still_missing_with_history = d["win_rate_avg"].isna() & (~insufficient_history)
+    insufficient_history = d["prior_fight_count"] < 5
+    still_missing_with_history = d["win_rate_avg"].isna() & (~insufficient_history)
 
     # print("Missing due to <5 career fights so far:", insufficient_history.mean())
     # print("Missing despite having 5+ fights (draw/NC contamination):", still_missing_with_history.mean())
@@ -431,12 +431,12 @@ def add_rolling_features(fighter_hist, window=5):
 
     d["opp_elo_avg_5"] = (
         d.groupby("fighter")["opp_elo_pre"]
-        .transform(lambda s: s.shift(1).rolling(window=5, min_periods=5).mean())
+        .transform(lambda s: s.shift(1).rolling(window=5, min_periods=3).mean())
     )
 
     d["opp_elo_avg_3"] = (
         d.groupby("fighter")["opp_elo_pre"]
-        .transform(lambda s: s.shift(1).rolling(window=3, min_periods=3).mean())
+        .transform(lambda s: s.shift(1).rolling(window=5, min_periods=3).mean())
     )
 
     d["ko_win_rate_avg"] = (
@@ -473,6 +473,8 @@ FINAL_FEATURE_COLS = [f"{c}_diff" for c in BASE_FEATURE_COLS] + [
     "age_diff",
     "height_diff",
     "reach_diff",
+    # "prior_fight_count_f",
+    # "prior_fight_count_o"
 ]
 
 def build_matchup_dataset(df_fight_level, fighter_hist_rolled):
@@ -484,6 +486,7 @@ def build_matchup_dataset(df_fight_level, fighter_hist_rolled):
     """
     # print(fighter_hist_rolled.shape)
     model_df = fighter_hist_rolled.dropna(subset=BASE_FEATURE_COLS + ["result"]).copy()
+    # model_df = fighter_hist_rolled.dropna(subset=["result"]).copy()
     model_df["fight_id"] = model_df["fight_index"]
     # print(model_df.shape)
 
@@ -573,9 +576,6 @@ def run_preprocessor(df_raw, base_elo=1500, elo_k=16, rolling_window=5):
             "feature_cols": feature_cols,
         }
 
-BASE_ELO = 1500
-ELO_K = 16
-ROLLING_WINDOW = 5
 
 # def main():
 #     df = pd.read_csv("ufc-dataset.csv")
