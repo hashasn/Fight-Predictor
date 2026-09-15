@@ -9,15 +9,24 @@ from preprocessor import run_preprocessor, BASE_FEATURE_COLS, FINAL_FEATURE_COLS
 from train import FightNet, BASE_ELO, ELO_K, ROLLING_WINDOW
 
 ARTIFACTS_DIR = Path("artifacts")
+feature_cols = None
+preprocessor = None
+model = None
 
-with open(ARTIFACTS_DIR / "feature_cols.json") as f:
-    feature_cols = json.load(f)
+# load feature_cols / preprocessor / model from artifacts inti this
+# moduls globals
+def reload_artifacts():
+    global feature_cols, preprocessor, model
+    with open(ARTIFACTS_DIR / "feature_cols.json") as f:
+        feature_cols = json.load(f)
 
-preprocessor = joblib.load(ARTIFACTS_DIR / "preprocessor.joblib")
+    preprocessor = joblib.load(ARTIFACTS_DIR / "preprocessor.joblib")
 
-model = FightNet(len(feature_cols))
-model.load_state_dict(torch.load(ARTIFACTS_DIR / "fightnet_state.pt"))
-model.eval()
+    model = FightNet(len(feature_cols))
+    model.load_state_dict(torch.load(ARTIFACTS_DIR / "fightnet_state.pt"))
+    model.eval()
+
+
 
 
 def get_current_form(fighter_name, fighter_hist_rolled, window=ROLLING_WINDOW):
@@ -133,3 +142,6 @@ def predict_matchup(fighter_a, fighter_b, bundle, fight_date=None):
         "fighter_a_win_prob": round(prob, 3),
         "fighter_b_win_prob": round(1 - prob, 3),
     }
+
+# load one at import
+reload_artifacts()

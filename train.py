@@ -272,7 +272,9 @@ def train_nn(X_train, y_train, X_val, y_val, X_test, y_test, feature_cols):
     }
 
     return model, history
-def main():
+
+# full train run: load csv -> preprocess -> train -> save
+def train_and_save(csv_path="ufc-dataset.csv"):
     #load dataset
     df = pd.read_csv("ufc-dataset.csv")
     print("Loaded rows:", len(df))
@@ -322,12 +324,7 @@ def main():
     y_test = test_df["result_f"].copy()
 
     # print(paired[paired["reach_diff"].isna()][["fighter_f","fighter_o" ]])
-    # ---------------------------------------------------------------
-    # CHANGED: no more train_df.dropna(subset=feature_cols) — rows with a
-    # missing feature value are now imputed (median, fit on train only)
-    # instead of being discarded. This keeps more of your fight history,
-    # including fighters with incomplete bio data (height/reach/etc).
-    # ---------------------------------------------------------------
+
     print("NaNs in X_train before imputing:", X_train.isna().sum().sum())
 
     preprocessor = make_numeric_preprocessor()
@@ -338,25 +335,6 @@ def main():
     y_train_np = y_train.to_numpy(dtype=np.float32)
     y_val_np = y_val.to_numpy(dtype=np.float32)
     y_test_np = y_test.to_numpy(dtype=np.float32)
-
-
-    # scaler = StandardScaler()
-    # X_train_scaled = pd.DataFrame(
-    #     scaler.fit_transform(X_train),
-    #     columns=feature_cols,
-    #     index=X_train.index
-    # )
-    # X_val_scaled = pd.DataFrame(
-    #     scaler.transform(X_val),
-    #     columns=feature_cols,
-    #     index=X_val.index
-    # )
-
-    # X_test_scaled = pd.DataFrame(
-    #     scaler.transform(X_test),
-    #     columns=feature_cols,
-    #     index=X_test.index
-    # )
 
 
     print("\n--- Neural Network ---")
@@ -399,6 +377,10 @@ def main():
 
     print("Saved model + artifacts to", ARTIFACTS_DIR.resolve())
     print(json.dumps(metrics, indent=2))
+    return metrics
+
+def main():
+    train_and_save()
 
 if __name__ == "__main__":
     main()
