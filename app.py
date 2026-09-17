@@ -1,5 +1,7 @@
-
+import json
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
 
@@ -10,7 +12,16 @@ import predict as predict_module
 app = FastAPI()
 
 CSV_PATH = "data/ufc-dataset.csv"
+STORE_PATH = Path("data/predictions_store.json")
 
+
+#allow the react dev server to call this API
+app.add_middleware(
+    CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+)
 
 # request/response shapes
 class MatchupRequest(BaseModel):
@@ -43,6 +54,20 @@ def build_bundle():
 def health():
     return {"status": "ok"}
 
+def load_store():
+    if not STORE_PATH.exists():
+        return {"upcoming": [], "archive": []}
+    return json.loads(STORE_PATH.read_text())
+
+@app.get("/predictions/upcoming")
+def get_upcoming():
+    store = load_store()
+    return store["upcoming"]
+
+@app.get("predictions/archive")
+def get_archive():
+    store = load_store()
+    return store["archive"]
 
 @app.post("/predict", response_model=MatchupResponse)
 def predict(request: MatchupRequest):
