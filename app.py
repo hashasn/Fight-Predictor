@@ -64,7 +64,7 @@ def get_upcoming():
     store = load_store()
     return store["upcoming"]
 
-@app.get("predictions/archive")
+@app.get("/predictions/archive")
 def get_archive():
     store = load_store()
     return store["archive"]
