@@ -17,6 +17,7 @@ import joblib
 from pathlib import Path
 from datetime import datetime, timezone
 
+import copy
 
 ARTIFACTS_DIR = Path("artifacts")
 ARTIFACTS_DIR.mkdir(exist_ok=True)
@@ -230,7 +231,7 @@ def train_nn(X_train, y_train, X_val, y_val, X_test, y_test, feature_cols):
         if val_auc > best_val_auc + EARLY_STOP_EPS:
             best_val_auc = val_auc
             epochs_no_improve = 0
-            best_state = model.state_dict()
+            best_state = copy.deepcopy(model.state_dict())
         else:
             epochs_no_improve += 1
             if epochs_no_improve >= PATIENCE:
