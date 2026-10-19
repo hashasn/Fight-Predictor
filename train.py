@@ -274,9 +274,9 @@ def train_nn(X_train, y_train, X_val, y_val, X_test, y_test, feature_cols):
     return model, history
 
 # full train run: load csv -> preprocess -> train -> save
-def train_and_save(csv_path="ufc-dataset.csv"):
+def train_and_save(csv_path="data/ufc-dataset.csv"):
     #load dataset
-    df = pd.read_csv("ufc-dataset.csv")
+    df = pd.read_csv(csv_path)
     print("Loaded rows:", len(df))
     # print("loaded columns:", len(df.columns))
     # print("columns: ", df.dtypes)

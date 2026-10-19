@@ -8,9 +8,9 @@ from preprocessor import run_preprocessor
 import train as train_module
 import predict as predict_module
 
-CSV_PATH = Path("ufc-dataset.csv")
-CHECKPOINT_PATH = Path("checkpoint.json")
-STORE_PATH = Path("predictions_store.json")
+CSV_PATH = Path("data/ufc-dataset.csv")
+CHECKPOINT_PATH = Path("data/checkpoint.json")
+STORE_PATH = Path("data/predictions_store.json")
 
 
 # state I/O
